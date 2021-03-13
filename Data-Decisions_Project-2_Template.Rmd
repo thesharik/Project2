@@ -1,0 +1,226 @@
+---
+title: "Project 2"
+subtitle: "BA 713: Data and Decisions (Waddell)"
+author: "YourTeamName (member1, member2, etc)"
+date: "Due: 13 March 2021 at 11pm"
+output: 
+ html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("pacman")) install.packages("pacman") 
+library(pacman)
+p_load(dplyr, tidyverse, ggplot2, knitr, ggthemes, kableExtra)
+
+# Knitr options
+opts_chunk$set(
+  echo=TRUE, 
+  comment = "#>",
+  fig.align = "center",
+  fig.height = 5,
+  fig.width = 8,
+#  dpi = 300,
+  cache = F,
+  warning = F,
+  message = F
+)
+
+# ggplot theme
+theme_simple <- theme_bw() + 
+  theme(
+    plot.title = element_text(size=12),
+    #axis.line = element_line(size=.5),
+    #panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    rect = element_blank(),
+    strip.text = element_blank(),
+    axis.title = element_text(size=10),
+    axis.text.x = element_text(size = 10, margin = margin(-8,0,0,0)),
+    axis.text.y = element_text(size = 10, angle=90),
+    axis.ticks = element_blank()
+  )
+```
+
+# Intro
+
+In the code chunk below, you'll see that I have read in some election data, and plotted `newdeath.pc` (from Project 1) for every state, for all days in 2021 (through Feb 27), faceted by whether the state went for the Democrat or Republican candidate. I've also used a gradient to indicate the vote share. (_It's a mess._)
+
+Note the use of `stringr::str_to_title()`, `filter()`, `lm()`, and `huxtable::huxreg()`. They're new to you. 
+
+```{r, echo=T}
+covid <- read.csv("https://covidtracking.com/data/download/all-states-history.csv")
+covid <- covid %>% select(state, date, death, hospitalized)
+covid <- covid[is.na(covid$death)==F, ]  # drop missing deaths
+covid <- covid %>%
+    group_by(state) %>% 
+    mutate(
+      newdeath = death - lead(death),
+      newhospitalized = hospitalized - lead(hospitalized)
+    ) %>% ungroup()
+covid <- covid[is.na(covid$newdeath)==F, ]  # drop missing newdeaths
+covid <- covid %>%
+  mutate(
+    newdeath = ifelse( newdeath<0, 0, newdeath),
+    newhospitalized = ifelse( newhospitalized<0, 0, newhospitalized),
+    NAME = state.name[match(state, state.abb)],
+    date = as.Date(date),
+    month = months(date),
+    year = format(date, format="%Y")
+  )
+covid$date <- as.Date(covid$date)
+
+# Census populations
+census.pop <- read.csv("https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/nst-est2020.csv") %>%
+  select( NAME, POPESTIMATE2020) 
+
+# election data
+p_load(stringr)
+election <- read.csv("https://www.dropbox.com/s/8uvoxi4vjb7kzll/1976-2020-president.csv?dl=1") %>%
+  filter(year==2020 & (party_detailed=="DEMOCRAT" | party_detailed=="REPUBLICAN")) %>%
+  select(state, party_detailed, candidatevotes) %>%
+  group_by(state) %>%
+  mutate(
+    totalvotes.DRonly = sum(candidatevotes),
+    share.D = 100*ifelse(party_detailed=="DEMOCRAT", 
+                    candidatevotes / sum(candidatevotes), 
+                    1 - (candidatevotes / sum(candidatevotes))),
+    share.R = 100*ifelse(party_detailed=="REPUBLICAN", 
+                    candidatevotes / sum(candidatevotes), 
+                    1 - (candidatevotes / sum(candidatevotes)))
+  ) %>% ungroup() %>%
+  filter(party_detailed=="REPUBLICAN") %>% 
+  select(state, share.R, share.D, totalvotes.DRonly)
+
+election$state = stringr::str_to_title(election$state)
+
+# merging 
+df <- merge( covid, census.pop, by="NAME")
+df <- merge( df, election, by.x="NAME", by.y="state")
+df <- df %>% 
+  mutate(
+    newdeath.pc = 1e6*(newdeath/POPESTIMATE2020),
+    death.pc = 1e6*(death/POPESTIMATE2020),
+    totalvotes.DRonly.pc = totalvotes.DRonly/POPESTIMATE2020,
+    winning_party = ifelse(share.D>50,"Democrat states","Republican states"),
+    POPESTIMATE2020.mil = POPESTIMATE2020/1e6
+  ) %>% 
+  filter(date>="2021-01-01")
+
+# note oddities
+#summary(df$newdeath.pc)  # a couple outliers
+gg <- df %>% 
+  filter(
+    newdeath.pc<218
+  )
+ggplot(data=gg, 
+       aes(x=date, y=newdeath.pc, group=factor(state), color=share.R)) +
+  geom_line(alpha=.7, size=.1) + 
+  labs(
+    title = "Daily Covid-19 Deaths",
+    y = "Deaths per million (daily)",
+    x = "\nDate",
+    caption = "Sources: Covid-19 data from Covid Tracking Project; Election data from MIT Election Data + Science Lab",
+    color = "Republican share of votes"
+  ) +
+  theme_simple +
+  theme(
+    plot.title = element_text(size=16),
+    axis.text.x = element_text(vjust=0.5,angle=90),
+    strip.text.x = element_text(size = 12)
+  ) + 
+  scale_color_gradient(low="blue", high="red") +
+  scale_x_date(date_labels = "%b-%Y") 
+  # facet_wrap(~ winning_party)  #THIS LINE WAS CAUSING ERRORS ON SOME CLOUD SERVERS, SO I'VE COMMENTED IT OUT FOR NOW
+```
+
+
+# Part 1
+
+Below, I've written code to run two models. In the first, I simply ask if a state's deaths move with the republican vote share. In the second, I control for the share of the population that voted. (_In each, I also control for a cubic trend. I don't show this in the table so we can focus a bit._)
+
+``` {r, echo=T}
+df.reg <- df %>%
+  filter(date>="2021-01-01" & date<="2021-02-27") %>%
+  mutate(t = as.numeric(date-min(date)),
+         t2 = t*t,
+         t3 = t*t2
+    )
+
+m1 <- lm(newdeath.pc ~ share.R + t + t2 + t3, df.reg)
+m2 <- lm(newdeath.pc ~ share.R + totalvotes.DRonly.pc + t + t2 + t3, df.reg)
+
+p_load(huxtable)
+ht <- huxreg("Model 1" = m1, "Model 2" = m2,
+             statistics = character(0),
+             coefs = c("Republican share of votes (0 to 100)" = "share.R", 
+                       "Total votes / State population (0 to 1)" = "totalvotes.DRonly.pc"),
+             note = "{stars}. t statistics in parentheses."
+       )
+width(ht) <- .75
+wrap(ht) <- FALSE
+ht %>% set_caption("Daily Covid-19 Deaths, 2021-01-02 through 2021-02-27")
+```
+
+**ACTIONABLE:** Interpret the above regression output. 
+
+- _In Model 1, what does the_ `r round(m1$coefficients[2],3)` _mean?_ Answer here...
+
+- _In Model 1, what do the stars on_ `r round(m1$coefficients[2],3)` _mean?_ Answer here...
+
+- _How do you imagine Model 1 being used to infer something about Republican-leaning states and Covid deaths?_ Answer here...
+
+- _Would it be reasonable to interpret Model 1 that way? Why? Why not?_ Answer here...
+
+- _What must be true for the relationship between Covid deaths and "Republican share of votes" to change between Model 1 and Model 2?_ Answer here...
+
+- _In Model 2, what does the_ `r round(m2$coefficients[2],3)` _mean?_ Answer here...
+
+- _In Model 2, what does the lack of stars on_ `r round(m2$coefficients[2],3)` _mean?_ Answer here...
+
+
+<br>
+---
+<br>
+
+
+# Part 2
+
+Here, I am most interested in the consistency that follows from your research question to your methodology&mdash;be careful about the question, and be sure that the methods follow.  
+
+
+Picking up where we left off with Part 4 of Project 1...
+
+
+**ACTIONABLE 1** What is the causal question you are asking?
+
+- respond here
+
+**ACTIONABLE 2** Why do you care about knowing about this relationship? Why should anyone else care?
+
+- respond here 
+
+**ACTIONABLE 3** What would the ideal experiment be were you to be able to conduct the ideal experiment?
+
+- respond here
+
+**ACTIONABLE 4** How will you approach answering this question, and how does it approximate the ideal experiment? (_What must you assume is random in order to interpret the results as causal?_)
+
+- respond here
+
+**ACTIONABLE 5** Include your analysis in the chunk below.
+
+``` {r, echo=T}
+# respond here
+
+```
+
+
+---
+<br><br><br><br>
+
+
+

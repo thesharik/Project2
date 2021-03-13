@@ -1,0 +1,249 @@
+---
+title: "Project 1"
+subtitle: "BA 713: Data and Decisions (Waddell)"
+author: Hawthone (Shar, Zoe, MattyC, Liz, Will)
+date: "Due: 27 February 2021 at 11pm"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("pacman")) install.packages("pacman") 
+library(pacman)
+p_load(dplyr, tidyverse, ggplot2, knitr, ggthemes, kableExtra)
+
+# Knitr options
+opts_chunk$set(
+  echo=TRUE, 
+  comment = "#>",
+  fig.align = "center",
+  fig.height = 3,
+  fig.width = 5,
+#  dpi = 300,
+  cache = F,
+  warning = F,
+  message = F
+)
+
+# ggplot theme
+theme_simple <- theme_bw() + 
+  theme(
+    plot.title = element_text(size=12),
+    #axis.line = element_line(size=.5),
+    #panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    rect = element_blank(),
+    strip.text = element_blank(),
+    axis.title = element_text(size=10),
+    axis.text.x = element_text(size = 10, margin = margin(-8,0,0,0)),
+    axis.text.y = element_text(size = 10, angle=90),
+    axis.ticks = element_blank()
+  )
+```
+
+# Intro
+
+As part of the markdown example I provided, you saw how one could read in the Covid-19 data available from the [Covid Traving Project](https://covidtracking.com). I'm now interested in Covid data for Oregon, Washington, California, Idaho, and Nevada. 
+
+Note the use of `rbind()`, `dplyr::group_by()`, `ifelse()`, `merge()`, `mean()`, and `dplyr::subset()` and `round()`. They're new to you. You'll also see `state.abb` and `state.name`, which allow you to call the state abbreviations and names any time they're needed.
+
+# Part 1
+
+**ACTIONABLE** Edit the code below to add data for Idaho and Nevada. (_Note that the figure should automatically update to include them without need for you to adjust that part of the code._)
+
+```{r, echo=F}
+# grabbing data for the states of interest
+covid.OR <- read.csv("https://covidtracking.com/data/download/oregon-history.csv")
+covid.WA <- read.csv("https://covidtracking.com/data/download/washington-history.csv")
+covid.CA <- read.csv("https://covidtracking.com/data/download/california-history.csv")
+covid.ID <- read.csv("https://covidtracking.com/data/download/idaho-history.csv")
+covid.NV <- read.csv("https://covidtracking.com/data/download/nevada-history.csv")
+
+# binding these together (since they have the same columns, we can just bind the rows of each dataframe "on top of each other" using rbind)
+covid <- rbind(covid.CA, 
+               covid.OR,
+               covid.WA,
+               covid.ID,
+               covid.NV) %>%
+  select(state, date, death, hospitalized)
+
+# dropping days prior to the first death (which is the same as keeping the rows for which `death` is not missing.)
+covid <- covid[is.na(covid$death)==F, ]  
+  
+# by state, calculating daily deaths and hospitalizations  
+covid <- covid %>%
+    group_by(state) %>%  # we need to do lead/lags "by state". otherwise, on the first and last observation/rows or state i, the neighbouring rows woudl actually be from a different state and the lead function would pick up the deaths from that different state. when we specifify group_by(state), subsequent functions then respect that they should be conditional on rows from the same state.
+    mutate(
+      newdeath = death - lead(death),
+      newhospitalized = hospitalized - lead(hospitalized)
+    )
+
+# dropping NAs for newdeath (should be one for each state given the lead)
+covid <- covid[is.na(covid$newdeath)==F, ]  
+
+# i notice that `newdeath` is negative on occasion. (maybe negatives represent corrections?) let's just replace newdeath with zeros on any days that have newdeath<0 and not worry about it for our purposes. (we could have dropped them, but that would make the lead/lag operations more difficult.) doing this also demonstrates the use of the `ifelse` function, so that's good.
+covid <- covid %>%
+  mutate(
+    newdeath = ifelse( newdeath<0, 0, newdeath),
+    newhospitalized = ifelse( newhospitalized<0, 0, newhospitalized)
+  )
+
+# for this, let's convert `date` to an actual date/time variable
+covid$date <- as.Date(covid$date)
+
+ggplot(data=covid, 
+       aes(x=date, y=newdeath, color=factor(state))) +
+  geom_line(alpha=.8) + 
+  labs(
+    title = "Daily Covid-19 Deaths",
+    y = "Deaths (daily)",
+    x = "Date"
+  ) +
+  theme_simple +
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(.25,.75)
+  ) + 
+  scale_x_date(date_labels = "%m-%Y")
+```
+
+# Part 2
+
+In the code chunk below you'll see that you are pulling population data straight from the US Census and adding it to the `covid` data frame you created above. (_See if you can figure out what's going on with it all._) 
+
+* I've selected the `NAME` and `POPESTIMATE2020` columns. (_This dataset has a bunch of stuff in it, if you're interested in poking around at it some time._)
+* I've taken care of the nuisance created by the Census using state names, while the Covid Tracking Project uses state abbreviations... so, we have to add names to the covid data so we can merge the two data sources. 
+
+``` {r, echo=T}
+census.pop <- read.csv("https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/nst-est2020.csv") %>%
+  select( NAME, POPESTIMATE2020) 
+
+# adding names to the covid data to facilitate the merge (i'll use NAME for this, so it matches the naming convension of the census data)
+covid <- covid %>% 
+  mutate( NAME = state.name[match(state, state.abb)] )
+
+# merging the two together (i.e., add POPESTIMATE2020, from census.pop, to covid)
+covid <- merge( covid, census.pop, by="NAME")
+```      
+
+---
+
+**ACTIONABLE 1** In the chunk below, use `ggplot` to produce a new variable for each state that captures the number of deaths per 1,000,000 people---call it `newdeath.pc` to indicate that it is now "deaths _per capita_."
+``` {r, echo=T}
+# DO THIS HERE
+
+
+ggplot(data=covid, 
+       aes(x=date, y=newdeath, color=factor(state))) +
+  geom_line(alpha=.8) + 
+  labs(
+    title = "Daily Covid-19 Deaths",
+    y = "Deaths (daily)",
+    x = "Date"
+  ) +
+  theme_simple +
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(.25,.75)
+  ) + 
+  scale_x_date(date_labels = "%m-%Y")
+
+
+
+```
+
+---
+
+**ACTIONABLE 2** In the space below, create a new figure, showing the number of Covid-19 deaths _per capita_ for each of the five states. Adjust the labels to reflect that this is now deaths per million, and add a caption to the figure that indicates that the sources are the "Covid Tracking Project" and "US Census."
+
+DO THIS HERE (_You'll have to create a chunk to do all that in, but use `echo=FALSE` so we only see figure and not the code._)
+
+
+---
+
+# Part 3
+
+**ACTIONABLE 1** In January, what was the mean number of daily Covid-19 deaths per million in Oregon and in Washington? 
+
+``` {r, echo=F}
+# given that date is recognized as an actual date, we can create month and year columns from it directly
+covid <- covid %>% 
+  mutate(
+    month = months(date),
+    year = format(date, format="%Y")
+  )
+
+# mean newdeath for oregon (but, all days, not just jan'20 since the subset() is not yet conditioning on dates)
+mean.OR = mean( subset(covid, state=="OR")$newdeath ) %>% round(2)
+
+# ADD YOUR BIT ABOUT THE MEANS HERE:
+mean.OR.jan = "?" # edit these lines so that the objects 
+mean.WA.jan = "?" # capture the means you've been asked for
+```
+
+We can automatically drop the value of objects (like the value of `mean.OR` for example) into the text of a markdown file using an inline R chunk, as `r mean.OR` deaths per million. 
+
+* The mean number of January 2021 deaths in Washington was `r mean.WA.jan` $\leftarrow$ _should populate automatically when you edit `mean.WA.jan` in the code above. That arrow is Latex code, which R reads._
+* The mean number of January 2021 deaths in Oregon was `r mean.OR.jan` $\leftarrow$ _same_
+
+<br>
+
+
+**ACTIONABLE 2** Are these means significantly different, one from the other? (_Do a t-test. Not by hand. Comeon... do it in R! In the code chunk below._)
+
+``` {r, echo=F}
+# FOR THE t TEST: 
+# it's a two-sample t test you want to do, and R will do most of the work for you if you feed it the relevent data. 
+# let's use the `t-test` function, which takes the form:
+# t.test( arg1 ~ arg2, arg3) where
+  # arg1 = the column being compared (newdeath.pc?) 
+  # arg2 = the column that indicates the two groups (state?)
+  # arg3 = the data where these two groups can be found. the data frame we feed into it must have exactly 2 groups. 
+# it would be WA and OR we're trying to compare, so let's make a dataframe that works for this purpose...
+df.for.t <- subset(covid, state=="WA" | state=="OR")
+# R will take care of calculating the means and variances for that those two groups if you use the `t.test` function 
+
+# DO THE t TEST HERE:
+
+
+```
+
+- According to a _t_-test, the difference is ??? and it is...  (_Is it significant? At what level?_)
+
+
+---
+
+# Part 4
+
+For this part, I'd like to leave the Covid-19 stuff and just have you think some. In particular, I'd like to see you propose a research question for Project 2.
+
+
+**ACTIONABLE 1** What is the causal question you are asking?
+
+- respond here
+
+**ACTIONABLE 2** Why do you care about knowing about this relationship? Why should anyone else care?
+
+- respond here 
+
+**ACTIONABLE 3** What would the ideal experiment be were you to be able to conduct the ideal experiment?
+
+- respond here
+
+<br>
+
+It's a little unfair to be asking what methodology you might bring to answering this question just yet, so I'll stop. (We'll develop some when we're next together.) But, collect your thoughts together around a question that you might actually want to know more about, for which you have or could get data to at least begin exploring. (_You're not committing to a research question for Project 2 at this point, so don't worry about that. Even the process of developing good questions, and frameworks for answering them, is an investment in your own human capital._) 
+
+**EXTRA** Do you have data? If so, throw some stuff in a chunk of R code below and have fun exploring. If you don't have data, start digging for some.
+
+``` {r, echo=T}
+# respond here, i guess, if you do get to exporing
+
+```
+---
+<br><br><br><br>
+
+
+
