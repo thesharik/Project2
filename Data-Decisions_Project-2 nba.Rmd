@@ -1,0 +1,156 @@
+---
+title: "Project 2 NBA Rest vs Injuries"
+subtitle: "BA 713: Data and Decisions (Waddell)"
+author: "Hawthorne (Zoe Galindo, Shar Shargorodskiy, Will Townsend, Liz Ficken, Matt Curths)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("pacman")) install.packages("pacman") 
+library(pacman)
+p_load(dplyr, tidyverse, ggplot2, knitr, ggthemes, kableExtra)
+
+# Knitr options
+opts_chunk$set(
+  echo=TRUE, 
+  comment = "#>",
+  fig.align = "center",
+  fig.height = 3,
+  fig.width = 5,
+#  dpi = 300,
+  cache = F,
+  warning = F,
+  message = F
+)
+
+# ggplot theme
+theme_simple <- theme_bw() + 
+  theme(
+    plot.title = element_text(size=12),
+    #axis.line = element_line(size=.5),
+    #panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    rect = element_blank(),
+    strip.text = element_blank(),
+    axis.title = element_text(size=10),
+    axis.text.x = element_text(size = 10, margin = margin(-8,0,0,0)),
+    axis.text.y = element_text(size = 10, angle=90),
+    axis.ticks = element_blank()
+  )
+```
+
+```{r, echo=F}
+# grabbing data for the years of interest of interest
+season.0809 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA0809.csv")
+season.0910 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA0910.csv")
+season.1011 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1011.csv")
+season.1112 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1112.csv")
+season.1213 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1213.csv")
+season.1314 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1314.csv")
+season.1415 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1415.csv")
+season.1516 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1516.csv")
+season.1617 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1617.csv")
+season.1718 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1718.csv")
+season.1819 <- read.csv("https://github.com/thesharik/Project2/blob/main/NBA1819.csv")
+
+# binding these together (since they have the same columns, we can just bind the rows of each dataframe "on top of each other" using rbind)
+allseasons <- rbind(season.0809, 
+              season.0910,
+              season.1011,
+              season.1112,
+              season.1213,
+              season.1314,
+              season.1415,
+              season.1516,
+              season.1617,
+              season.1718,
+              season.1819
+              ) %>%
+  select(Date, COMMENT, TEAM_ABBREVIATION, PLAYER_NAME)
+
+# create two data frames to model rest days (COMMENT: DNP - Coaches Decision / Rest) and a second set of data with DNP - Injury. Looking to model to top players in the NBA get less injuries in the playoffs with managed rest days during the regular season. 
+allseasons.rest <- allseasons %>%
+    mutate( 
+      COMMENT = ifelse(COMMENT="DNP - Coach's Decision", 1, COMMENT),
+      COMMENT = ifelse(COMMENT="DND - Rest", 1, COMMENT)
+    )
+allseasons.injury <- allseasons%>%
+    mutate(
+    COMMENT = ifelse(COMMENT="DND - Injury/Illness", 1, COMMENT),
+    COMMENT = ifelse(COMMENT="DNP - Injury/Illness", 1, COMMENT)
+    )
+#plot the data to visualize both injuries to Top 10 scorers over NBA season, and rest days during the season. 
+
+ggplot(data=allseasons_rest, 
+       aes(x=date, y=COMMENT, color=factor(TEAM_ABBREVIATION))) +
+  geom_line(alpha=.8) + 
+  labs(
+    title = "Days of rest for Top 10 NBA scorers",
+    y = "# of players rested",
+    x = "Date"
+  ) +  
+  theme_simple +
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(.25,.75)
+  ) + 
+  scale_x_date(date_labels = "%m-%Y")
+  
+  #create linear regression based on rest data during regular season, how does it compare to injuries in playoffs
+
+``` {r, echo=T}
+df.reg <- df %>%
+  filter() %>%
+  mutate(t = t),
+         t2 = t*t,
+         t3 = t*t2
+    )
+
+m1 <- lm(allseasons.injury ~ allseasons.rest + t + t2 + t3, df.reg)
+  
+  
+  
+  
+  
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
